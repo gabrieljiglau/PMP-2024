@@ -112,8 +112,7 @@ def ex3(num_clients=10000):
     print(f"Mean service time: {mean_service_time:.2f} hours")
     print(f"Standard deviation of service time: {std_service_time:.2f} hours")
 
-    plt.figure(figsize=(10, 6))
-    plt.hist(service_times, bins=50, density=False, alpha=0.6, color='blue', edgecolor='black')
+    az.plot_kde(service_times)
 
     plt.title('Densitatea distributiei timpului de servire')
     plt.xlabel('Timpul de servire (hours)')
@@ -128,8 +127,8 @@ if __name__ == '__main__':
     # print(f "resulted array is {result_arr}")
 
     # EX2
-    # i)the binomial distribution
-    # simulate_game()
+    # i)the geometric distribution (the first success of the trial)
+    # simulate_game(10000, 0.5, 0.5)
 
     #EX3
     ex3()

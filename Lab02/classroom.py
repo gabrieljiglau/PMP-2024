@@ -3,7 +3,7 @@ import random
 def lab_exercise(num_simulations=10000):
     red_count = 0
 
-    for _ in range(num_simulations):
+    for i in range(num_simulations):
         # initial
         urn = ['red'] * 3 + ['blue'] * 4 + ['black'] * 2
 
@@ -20,6 +20,13 @@ def lab_exercise(num_simulations=10000):
 
         # scoatem o bila
         drawn_ball = random.choice(urn)
+
+        if drawn_ball == 'red':
+            print(f"Am scos o bila rosie la rularea {i+1} a experimentului")
+        elif drawn_ball == 'blue':
+            print(f"Am scos o bila albastra la rularea {i+1} a experimentului")
+        else:
+            print(f"Am scos o bila neagra la rularea {i+1} a experimentului")
 
         if drawn_ball == 'red':
             red_count += 1
