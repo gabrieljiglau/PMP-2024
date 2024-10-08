@@ -128,7 +128,7 @@ if __name__ == '__main__':
     # print(f "resulted array is {result_arr}")
 
     # EX2
-    # i)the normal distribution
+    # i)the binomial distribution
     # simulate_game()
 
     #EX3
