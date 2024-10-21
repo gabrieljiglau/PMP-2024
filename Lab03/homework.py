@@ -80,7 +80,7 @@ def build_model():
 
     # primul va fi ca nu are (peste tot)
 
-    # how do i model P(T = 1 | B = 1) = 0.8 and P(T = 1| B = 0) ?
+    # how do I model P(T = 1 | B = 1) = 0.8 and P(T = 1| B = 0) ?
     cpd_b = TabularCPD(variable='B', variable_card=2, values=[[0.9], [0.1]])
     cpd_t = TabularCPD(variable='T', variable_card=2,
                        values=[[0.7, 0.2],
@@ -102,7 +102,6 @@ def build_model():
                        evidence_card=[2, 2])
 
     disease_model.add_cpds(cpd_b, cpd_t, cpd_x, cpd_d)
-
     disease_model.check_model()
 
     return disease_model
@@ -116,7 +115,7 @@ def ex2_b(model):
 
 def ex2_c(model):
     infer = VariableElimination(model)
-    posterior_p = infer.query(["X"], evidence={"T": 1, "D": 1})
+    posterior_p = infer.query(["X"], evidence={"B":0, "T": 1, "D": 1})
     print(f"{posterior_p} \n")
 
 
@@ -282,16 +281,14 @@ if __name__ == '__main__':
     ex2_b(first_model)  # P(B=1 | T=1 and D=1) = 0.3478
     """
 
-    """
-    print("P(X1) ca are radiografia anormala")
-    ex2_c(first_model)  # P(X=1 | T = 1 and D=1) = 0.3783
-    """
+    # print("P(X1) ca are radiografia anormala")
+    # ex2_c(first_model)  # P(X=1 | B = 0 and T = 1 and D=1)
 
     """
     Probability of the first player winning: 0.4249
     Probability of the second player winning:  0.5751
     """
-    # ex3a_simulate_game()
+    ex3a_simulate_game()
 
     game_model = ex3b_build_second_model()
     ex3_c(game_model)

@@ -1,7 +1,4 @@
-import random
-
 import numpy as np
-from PIL import Image
 from typing import Dict, List
 from pgmpy.models import MarkovNetwork
 from pgmpy.factors.discrete import DiscreteFactor
@@ -62,110 +59,142 @@ def ex2(weather_stations_num: int, neighbours_memo: Dict[str, List[str]], initia
     print(marginals)
 
 
-def build_model(original_image):
-    # Initialize the Markov Network
-    mrf = MarkovNetwork()
+def add_noise_to_image(image: np.ndarray, noise_level: float = 0.1) -> np.ndarray:
+    height, width = image.shape
 
-    # Define the grid size
-    grid_size = original_image.shape[0]
+    # the total number of pixels
+    num_pixels = height * width
+    num_noisy_pixels = int(num_pixels * noise_level)
 
-    # Create nodes for each pixel in the image
-    nodes = [(i, j) for i in range(grid_size) for j in range(grid_size)]
-    mrf.add_nodes_from(nodes)
+    # random indices to modify
+    indices_to_modify = np.random.choice(num_pixels, num_noisy_pixels, replace=False)
 
-    # Add edges between neighboring pixels
-    for i in range(grid_size):
-        for j in range(grid_size):
-            if i > 0:  # North neighbor
-                mrf.add_edge((i, j), (i - 1, j))
-            if i < grid_size - 1:  # South neighbor
-                mrf.add_edge((i, j), (i + 1, j))
-            if j > 0:  # West neighbor
-                mrf.add_edge((i, j), (i, j - 1))
-            if j < grid_size - 1:  # East neighbor
-                mrf.add_edge((i, j), (i, j + 1))
+    # create a 2D index array from the flat indices
+    row_indices = indices_to_modify // width
+    col_indices = indices_to_modify % width
 
-    print(f"Is the model ok ? {mrf.check_model()}")
-    return mrf
+    # create noise
+    noise = np.random.randint(-5, 6, size=num_noisy_pixels)  # noise in range [-5, 5]
+
+    # add noise to the selected pixels
+    for i in range(num_noisy_pixels):
+        image[row_indices[i], col_indices[i]] += noise[i]
+
+    # clip values to be in [0, 255]
+    new_image = np.clip(image, 0, 255)
+
+    return new_image
 
 
-def create_factors(mrf, noisy_image, lambd=1):
-    """
-    Creates and adds factors to the Markov Random Field based on the noisy image.
-    """
-    grid_size = noisy_image.shape[0]
+def create_markov_network(height: int, width: int, lambda_arg: float, image: np.ndarray) -> MarkovNetwork:
+    model = MarkovNetwork()
 
-    # Step 2: Create factors for each pixel
-    for i in range(grid_size):
-        for j in range(grid_size):
-            pixel_var = (i, j)
+    # node names for each pixel in the grid
+    nodes = [f'X{i}_{j}' for i in range(height) for j in range(width)]
+    model.add_nodes_from(nodes)
 
-            # Create the factor for the observed noisy pixel
-            factor_noisy = DiscreteFactor(variables=[pixel_var], cardinality=[256], values=np.zeros(256))
-            # Set the observed value (noisy pixel)
-            factor_noisy.values[noisy_image[i, j]] = lambd  # This keeps the observed noisy value
-            # Add the noisy factor to the model
-            mrf.add_factors(factor_noisy)
+    # add connections
+    for i in range(height):
+        for j in range(width):
+            current_node = f'X{i}_{j}'
+            # north neighbour
+            if i > 0:
+                model.add_edge(current_node, f'X{i - 1}_{j}')
+            # south neighbour
+            if i < height - 1:
+                model.add_edge(current_node, f'X{i + 1}_{j}')
+            # west neighbour
+            if j > 0:
+                model.add_edge(current_node, f'X{i}_{j - 1}')
+            # east neighbour
+            if j < width - 1:
+                model.add_edge(current_node, f'X{i}_{j + 1}')
 
-            # Define neighbors
-            neighbors = []
-            if i > 0:  # North neighbor
-                neighbors.append((i - 1, j))
-            if i < grid_size - 1:  # South neighbor
-                neighbors.append((i + 1, j))
-            if j > 0:  # West neighbor
-                neighbors.append((i, j - 1))
-            if j < grid_size - 1:  # East neighbor
-                neighbors.append((i, j + 1))
+    # factors for each node
+    for i in range(height):
+        for j in range(width):
+            current_node = f'X{i}_{j}'
+            observed_value = image[i, j]
 
-            # Step 3: Create factors between the current pixel and its neighbors
-            for neighbor in neighbors:
-                vars_neighbor = [pixel_var, neighbor]  # Current pixel and neighbor
+            # data term factor from observed noisy image
+            data_term_values = np.zeros(256)
+            for k in range(256):
+                data_term_values[k] = np.exp(-lambda_arg * (k - observed_value) ** 2)
 
-                # Initialize the factor for the current pixel and neighbor
-                factor_neighbor = DiscreteFactor(variables=vars_neighbor, cardinality=[256, 256],
-                                                 values=np.zeros(256 * 256))  # Start with zeros
+            data_factor = DiscreteFactor(
+                variables=[current_node],
+                cardinality=[256],
+                values=data_term_values
+            )
+            model.add_factors(data_factor)
 
-                # Set values favoring similar neighboring pixels
-                for k in range(256):
-                    # Diagonal entry: penalty for same values
-                    factor_neighbor.values[(k * 256 + k) % 256] = lambd  # Same values
-                    for l in range(256):
-                        if k != l:
-                            factor_neighbor.values[(k * 256 + l) % 256] = 1.0  # Low value for dissimilar pairs
+            # smoothness as a quadratic penalty on pixel differences
+            smoothness_penalty = np.zeros((256, 256))
+            for p in range(256):
+                for q in range(256):
+                    smoothness_penalty[p, q] = np.exp(-(p - q) ** 2)
 
-                # Add the neighbor factor to the model
-                mrf.add_factors(factor_neighbor)
+            if i > 0:  # north neighbor
+                neighbor_node = f'X{i - 1}_{j}'
+                smoothness_factor = DiscreteFactor(
+                    variables=[current_node, neighbor_node],
+                    cardinality=[256, 256],
+                    values=smoothness_penalty
+                )
+                model.add_factors(smoothness_factor)
 
-    # Optional: Check model for consistency
-    print(f"is the model in the second check ok? {mrf.check_model()}")
-# Example function to denoise the image
-def denoise_image(original_image, noisy_image, lambd=1):
-    # Build the Markov Network model
-    mrf = build_model(original_image)
+            if i < height - 1:  # south neighbor
+                neighbor_node = f'X{i + 1}_{j}'
+                smoothness_factor = DiscreteFactor(
+                    variables=[current_node, neighbor_node],
+                    cardinality=[256, 256],
+                    values=smoothness_penalty
+                )
+                model.add_factors(smoothness_factor)
 
-    # Create factors based on the noisy image
-    create_factors(mrf, noisy_image, lambd)
+            if j > 0:  # west neighbor
+                neighbor_node = f'X{i}_{j - 1}'
+                smoothness_factor = DiscreteFactor(
+                    variables=[current_node, neighbor_node],
+                    cardinality=[256, 256],
+                    values=smoothness_penalty
+                )
+                model.add_factors(smoothness_factor)
 
-    # Inference using Belief Propagation
+            if j < width - 1:  # east neighbor
+                neighbor_node = f'X{i}_{j + 1}'
+                smoothness_factor = DiscreteFactor(
+                    variables=[current_node, neighbor_node],
+                    cardinality=[256, 256],
+                    values=smoothness_penalty
+                )
+                model.add_factors(smoothness_factor)
+
+    model.check_model()
+    return model
+
+
+def estimate_original_image(model, image: np.ndarray) -> np.ndarray | None:
+    height, width = image.shape
+
     try:
-        bp_infer = BeliefPropagation(mrf)
+        bp_infer = BeliefPropagation(model)
+        variables = [f'X{i}_{j}' for i in range(height) for j in range(width)]
+        marginals = bp_infer.map_query(variables)
+
+        # extract estimated values for the original image
+        estimated_image = np.zeros((height, width), dtype=int)
+        for i in range(height):
+            for j in range(width):
+                estimated_image[i, j] = marginals[f'X{i}_{j}']
+
+        print(f"Estimated image: {estimated_image}")
+        return estimated_image
+
     except Exception as e:
-        print(f"Error during Belief Propagation initialization: {e}")
+        print(f"Error during inference: {e}")
         return None
 
-    # Map query to get the denoised image
-    denoised_image = np.zeros_like(noisy_image)
-    for i in range(noisy_image.shape[0]):
-        for j in range(noisy_image.shape[1]):
-            pixel_var = (i, j)
-            try:
-                denoised_image[i, j] = bp_infer.map_query(variables=[pixel_var])[pixel_var]
-            except Exception as e:
-                print(f"Error during map query for pixel ({i}, {j}): {e}")
-                denoised_image[i, j] = noisy_image[i, j]  # Fallback to noisy value
-
-    return denoised_image
 
 if __name__ == "__main__":
     # ex2
@@ -188,23 +217,21 @@ if __name__ == "__main__":
     ex2(num_stations, neighbours, probabilities)
     """
 
-    np.random.seed(0)  # For reproducibility
+    # ex3
+    np.random.seed(0)  # reproducibility
 
-    # Step 2: Create a noisy version of the image
-    original_image = np.random.randint(0, 256, (5, 5), dtype=np.uint8)
+    original_image = np.array([
+        0, 4, 8, 12, 16,
+        10, 14, 18, 22, 26,
+        20, 24, 28, 32, 36,
+        30, 34, 38, 42, 46,
+        40, 44, 48, 52, 56
+    ]).reshape(5, 5)
 
-    # Create a noisy image by modifying about 10% of the pixels
-    noisy_image = original_image.copy()
-    num_noisy_pixels = int(0.1 * original_image.size)
-    noisy_indices = np.random.choice(original_image.size, num_noisy_pixels, replace=False)
-    for idx in noisy_indices:
-        x, y = np.unravel_index(idx, original_image.shape)
-        noisy_image[x, y] = np.random.randint(0, 256)
+    # Adding noise to the image
+    noisy_image = add_noise_to_image(original_image)
+    print(f'Noisy image:\n{noisy_image}')
 
-    # Denoise the image
-    denoised_image = denoise_image(original_image, noisy_image, lambd=1)
-
-    # Print images
-    print("Original Image:\n", original_image)
-    print("Noisy Image:\n", noisy_image)
-    print("Denoised Image:\n", denoised_image)
+    lambda_value = 0.5
+    network = create_markov_network(5, 5, lambda_value, noisy_image)
+    returned_image = estimate_original_image(network, noisy_image)
