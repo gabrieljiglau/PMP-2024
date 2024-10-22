@@ -218,6 +218,7 @@ if __name__ == "__main__":
     """
 
     # ex3
+
     np.random.seed(0)  # reproducibility
 
     original_image = np.array([
@@ -228,10 +229,11 @@ if __name__ == "__main__":
         40, 44, 48, 52, 56
     ]).reshape(5, 5)
 
-    # Adding noise to the image
+    print(f'Original image: {original_image}')
+
     noisy_image = add_noise_to_image(original_image)
     print(f'Noisy image:\n{noisy_image}')
 
     lambda_value = 0.5
-    network = create_markov_network(5, 5, lambda_value, noisy_image)
-    returned_image = estimate_original_image(network, noisy_image)
+    # network = create_markov_network(5, 5, lambda_value, noisy_image)
+    # returned_image = estimate_original_image(network, noisy_image)
