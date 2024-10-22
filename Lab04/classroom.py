@@ -45,6 +45,11 @@ def build_and_visualize(edge_list, lambda_arg):
     # add factors to the model
     model.add_factors(factor_A1_A2, factor_A1_A3, factor_A2_A4, factor_A2_A5, factor_A3_A4, factor_A4_A5)
 
+    # get all factors (all the potentials and probabilities)
+    print('Factors: ')
+    for factor in model.get_factors():
+        print(factor)
+
     belief_propagation = BeliefPropagation(model)
 
     joint_prob = belief_propagation.map_query(variables=["A1", "A2", "A3", "A4", "A5"])
