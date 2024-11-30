@@ -46,28 +46,49 @@ def build_model(df):
     x = df['horsepower']
     y = df['mpg']
 
+    y_stddev = y.std()
+
     with pm.Model() as mpg_model:
         alpha = pm.Normal('alpha', mu=0, sigma=10)
         beta = pm.Normal('beta', mu=0, sigma=10)
-        mu = pm.Deterministic('mu', alpha + beta * pm.floatX(x.values))
-
-        sigma = pm.Gamma('sigma', alpha=1, beta=1)
-        mpg = pm.Normal('mpg', mu=mu, sigma=sigma, observed=y)
-
-        """
-        epsilon = pm.HalfNormal('epsilon', sigma=y_std)
+        epsilon = pm.HalfNormal('epsilon', sigma=10 * y_stddev)
+        mu = pm.Deterministic('mu', alpha + beta * x)
         y_pred = pm.Normal('y_pred', mu=mu, sigma=epsilon, observed=y)
-        """
 
-        trace = pm.sample(1000, return_inferencedata=True)
+        trace = pm.sample(1000, tune=1000, return_inferencedata=True)
 
-    az.plot_trace(trace, var_names=['alpha', 'beta', 'sigma'])
-    # plt.show()
+    az.plot_trace(trace, var_names=['alpha', 'beta', 'epsilon'])
+    plt.show()
+    print(az.summary(trace))
 
-    posterior_predictive = pm.sample_posterior_predictive(trace, model=mpg_model)
-    sig = az.plot_hdi(x, posterior_predictive, hdi_prob=0.98, color='k')
+    posterior = trace.posterior.stack(samples=("chain", "draw"))
+
+    # calculate the mean regression line
+    alpha_m = posterior['alpha'].mean().item()
+    beta_m = posterior['beta'].mean().item()
+
+    plt.scatter(x, y, color='blue', alpha=0.5, label='Observed data')
+
+    x_line = np.linspace(x.min(), x.max(), 100)  # 100 evenly spaced values
+    y_line = alpha_m + beta_m * x_line
+
+    plt.plot(x_line, y_line, color='red', label=f"Regression line: y={alpha_m:.2f} + {beta_m:2f}x")
+    for a, b in zip(posterior['alpha'].values.flatten()[:50], posterior['beta'].values.flatten()[:50]):
+        plt.plot(x_line, a + b * x_line, color='gray', alpha=0.3)
+
+    ppc = pm.sample_posterior_predictive(trace, model=mpg_model)
+    plt.plot(x, y, 'b.')
+    plt.plot(x, alpha_m + beta_m * x, c='k',
+             label=f'y = {alpha_m:.2f} + {beta_m:.2f} * x')
+    az.plot_hdi(x, ppc.posterior_predictive['y_pred'], hdi_prob=0.95, color='gray')
+    az.plot_hdi(x, ppc.posterior_predictive['y_pred'], color='gray')
     plt.xlabel('x')
     plt.ylabel('y', rotation=0)
+
+    plt.xlabel("Horsepower")
+    plt.ylabel("Mpg")
+    plt.legend()
+    plt.title("Regression lines from posterior sample")
     plt.show()
 
 
