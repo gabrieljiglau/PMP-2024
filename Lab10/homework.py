@@ -20,7 +20,7 @@ def import_data(file_name='Prices.csv', output_file='computer_prices.csv'):
     df.to_csv(output_file, header=False, index=False)
     return df
 
-def build_price_model(df):
+def build_price_model(data):
 
     """
     y ~ N(miu, sigma)
@@ -31,9 +31,9 @@ def build_price_model(df):
     x2 = ln(df['HardDrive'])
     """
 
-    y = df['Price']
-    x1 = df['Speed']
-    x2 = np.log(df['HardDrive'])
+    y = data['Price']
+    x1 = data['Speed']
+    x2 = np.log(data['HardDrive'])
 
     with pm.Model() as price_model:
         alpha = pm.Normal('alpha', mu=0, sigma=10)
@@ -52,6 +52,8 @@ def build_price_model(df):
     az.plot_posterior(trace, var_names=['beta1', 'beta2'], hdi_prob=0.95)
     plt.show()
     """
+
+    print(az.summary(trace, var_names=['alpha', 'beta1', 'beta2', 'epsilon']))
 
     """
     posterior = trace.posterior.stack(samples=("chain", "draw"))
@@ -82,11 +84,50 @@ def build_price_model(df):
     """
     return trace
 
-def predict_price(trace_p, x1_in, x2_in):
+def build_price_model2(data):
+
+    """
+    y ~ N(miu, sigma)
+    miu = alpha + beta1 * x1 + beta2 * x2
+
+    y = df['Price']
+    x1 = df['Speed']
+    x2 = ln(df['HardDrive'])
+    x3 = df['Premium']
+    """
+
+    y = data['Price']
+    x1 = data['Speed']
+    x2 = np.log(data['HardDrive'])
+    x3 = data['Premium']
+
+    with pm.Model() as price_model:
+        alpha = pm.Normal('alpha', mu=0, sigma=10)
+        beta1 = pm.Normal('beta1', mu=0, sigma=10)
+        beta2 = pm.Normal('beta2', mu=0, sigma=10)
+        beta3 = pm.Normal('beta3', mu=0, sigma=10)
+
+        # mu = mean, sigma = stddev, nu = degrees of freedom (a smaller number translates to 'heavier' tails)
+        epsilon = pm.StudentT('epsilon', mu=0, sigma=10, nu=3)
+        miu = pm.Deterministic('miu', alpha + beta1 * x1 + beta2 * x2 + beta3 * x3)
+
+        y_pred = pm.Normal('y_pred', mu=miu, sigma=epsilon, observed=y)
+        trace = pm.sample(1000, tune=1000, return_inferencedata=True)
+
+    # new_plot
+    """
+    az.plot_posterior(trace, var_names=['beta1', 'beta2', 'beta3'], hdi_prob=0.95)
+    plt.show()
+    """
+
+    print(az.summary(trace, var_names=['alpha', 'beta1', 'beta2', 'beta3', 'epsilon']))
+
+# 1_d (1_4)
+def predict_price(trace_p, x1, x2):
     """
     :param trace_p: the sampled values from the posterior distribution
-    :param x1_in: processor speed (MZz)
-    :param x2_in: hdd size (MB), after taking the natural logarithm of it
+    :param x1: processor speed (MHz)
+    :param x2: hdd size (MB), after taking the natural logarithm of it
     :return: the predicted price for that computer
     """
 
@@ -95,45 +136,55 @@ def predict_price(trace_p, x1_in, x2_in):
     beta1_samples = posterior['beta1'].values.flatten()
     beta2_samples = posterior['beta2'].values.flatten()
 
-    prediction_list = []
-    for processor_speed, ln_size in zip(x1_in, x2_in):
-        y_pred_samples = alpha_samples + beta1_samples * processor_speed + beta2_samples * ln_size
-        prediction_list.append(y_pred_samples)
+    y_pred_samples = alpha_samples + beta1_samples * x1 + beta2_samples * x2
 
-    return prediction_list
+    return y_pred_samples
+
+def predict_price_full_y(trace_p, x1, x2):
+
+    posterior = trace_p.posterior.stack(samples=("chain", "draw"))
+    alpha_samples = posterior['alpha'].values.flatten()
+    beta1_samples = posterior['beta1'].values.flatten()
+    beta2_samples = posterior['beta2'].values.flatten()
+    sigma_samples = posterior['epsilon'].values.flatten()
+
+    mu_samples = alpha_samples + beta1_samples * x1 + beta2_samples * x2
+    return np.random.normal(mu_samples, sigma_samples)
 
 
 if __name__ == '__main__':
 
     df = import_data()
     trace = build_price_model(df)
+    build_price_model2(df)
 
+    """
     # 1_d
-    x1_new = [33]
-    x2_new = [np.log(540)]
-    predictions = predict_price(trace, x1_new, x2_new)
+    x1_in = [33]  # MHz
+    x2_in = [np.log(540)]  # Natural log of HDD size in MB
 
-    for i, (x1_in, x2_in) in enumerate(zip(x1_new, x2_new)):
-        pred_samples = predictions[i]
-        pred_mean = pred_samples.mean()
-        pred_hdi = az.hdi(pred_samples, hdi_prob=0.90)
-        hdd_size = np.power(2.713, x2_new)
-        print(f"Predicted price for a computer with {str(x1_in)} MHz speed and {str(hdd_size)} Hdd size"
-              f"is {pred_mean:.2f}, 90% HDI = {pred_hdi:.2f} ")
+    pred_samples = predict_price(trace, x1_in, x2_in)
+    pred_samples_y = predict_price_full_y(trace, x1_in, x2_in)
 
+    pred_mean1 = pred_samples.mean()
+    pred_hdi1 = az.hdi(pred_samples, hdi_prob=0.90)
 
+    pred_mean2 = pred_samples_y.mean()
+    pred_hdi2 = az.hdi(pred_samples_y, hdi_prob=0.90)
 
+    hdd_size = np.exp(x2_in).item()
 
+    # result = 1587.78,  90% HDI = [1530.57660787 1645.3350707 ]
 
+    print(f"Predicted price (only mu) for a computer with {x1_in} MHz speed and {hdd_size:.2f} MB HDD size"
+          f" is {pred_mean1:.2f}, 90% HDI = {pred_hdi1}")
+    """
 
-
-
-
-
-
-
-
-
+    """
+    # result = 1605.95, 90% HDI = [ 554.09555262 2728.04776355]
+    print(f"Predicted price (full y) for a computer with {x1_in} MHz speed and {hdd_size:.2f} MB HDD size"
+          f" is {pred_mean2:.2f}, 90% HDI = {pred_hdi2}")
+    """
 
 
 
