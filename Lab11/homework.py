@@ -115,7 +115,7 @@ if __name__ == '__main__':
     data = import_data()
     trace_p = build_admission_model(data)
 
-    x1 = [550, 3.5]
+    x1 = [550, 3.5]  # 1.0, 90% HDI = [1 1]
     x2 = [500, 3.2]  # 0.6176214828644073, 90% HDI = [0.21141248 1]
 
     pred_samples = predict_admission_probability(trace_p, x1[0], x1[1])
