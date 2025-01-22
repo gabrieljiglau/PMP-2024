@@ -69,55 +69,47 @@ def import_data(file_id='1Svtgg3gHxIPitqkzzOfYPiMU_0PBtfJG', new_filename='chole
     return df
 
 
-def ex2(groups_arr):
+def build_second_model(number_of_subpopulations):
     data = import_data()
     if data is None:
         print('Data import failed')
         return
 
-    models = []
-    traces = []
-
     x1 = data['Ore_Exercitii'].values
     y = data['Colesterol'].values
 
-    for group_index in groups_arr:
-        with pm.Model() as model:
-            # a = the concentration parameters of the Dirichlet distribution
-            weights = pm.Dirichlet('weights', a=np.ones(group_index))
+    with pm.Model() as model:
+        # a = the concentration parameters of the Dirichlet distribution
+        weights = pm.Dirichlet('weights', a=np.ones(number_of_subpopulations))
 
-            alpha = pm.Normal('alpha', mu=0, sigma=10, shape=group_index)
-            beta1 = pm.Normal('beta1', mu=0, sigma=10, shape=group_index)
-            gamma = pm.Normal('gamma', mu=0, sigma=10, shape=group_index)
+        alpha = pm.Normal('alpha', mu=0, sigma=10, shape=number_of_subpopulations)
+        beta1 = pm.Normal('beta1', mu=0, sigma=10, shape=number_of_subpopulations)
+        gamma = pm.Normal('gamma', mu=0, sigma=10, shape=number_of_subpopulations)
 
-            # pm.Data -> share a variable without rebuilding the pymc model
-            x_shared = pm.Data('x_shared', x1)
+        mu = alpha[:, None] + beta1[:, None] * x1 + gamma[:, None] * x1**2
+        sigma = pm.HalfNormal('sigma', sigma=10, shape=number_of_subpopulations)
 
-            mu = pm.Deterministic('mu', math.stack([alpha[k] + beta1[k] * x_shared + gamma[k] * x_shared**2
-                                                    for k in range(group_index)]))
-            mu_means = pm.Deterministic('mu_means', mu.mean(axis=0))
-            sigma = pm.HalfNormal('sigma', sigma=10)
+        y_pred = pm.Mixture('y_obs', w=weights, comp_dists=pm.Normal.dist(mu=mu.T, sigma=sigma), observed=y)
+        trace = pm.sample(100, return_inferencedata=True)
 
-            y_pred = pm.NormalMixture('y_pred', w=weights, mu=mu, sigma=sigma, observed=y)
-            trace = pm.sample(1000, return_inferencedata=True)
+    return model, trace
 
-            traces.append(trace)
-            models.append(model)
+def plot_posterior(posterior_trace):
+    print(az.summary(posterior_trace))
+    az.plot_trace(trace, var_names=['alpha', 'beta1', 'gamma'])
+    plt.show()
 
-    for trace in traces:
-        print(az.summary(trace))
-        az.plot_trace(trace, var_names=['mu_means', 'alpha', 'beta', 'gamma'])
-        plt.show()
+def compare_models(models_list, traces_list, groups_arr):
 
-    [pm.compute_log_likelihood(traces[i], model=models[i]) for i in range(len(traces))]
-    comp = az.compare(dict(zip([str(group) for group in groups_arr], traces)),
+    [pm.compute_log_likelihood(traces_list[i], model=models_list[i]) for i in range(len(traces_list))]
+    comp = az.compare(dict(zip([str(group) for group in groups_arr], traces_list)),
                       method='BB-pseudo-BMA', ic='waic', scale='deviance')
 
     az.plot_compare(comp)
     print(f"comparing with waic \n{comp}")
     plt.show()
 
-    comp = az.compare(dict(zip([str(group) for group in groups_arr], traces)),
+    comp = az.compare(dict(zip([str(group) for group in groups_arr], traces_list)),
                       method='BB-pseudo-BMA', ic='loo', scale='deviance')
 
     az.plot_compare(comp)
@@ -127,5 +119,16 @@ def ex2(groups_arr):
 
 if __name__ == '__main__':
     # ex1()
+
+    models = []
+    traces = []
     groups = [3, 4, 5]
-    ex2(groups)
+    for group in groups:
+        model, current_trace = build_second_model(group)
+        models.append(model)
+        traces.append(current_trace)
+
+    for trace in traces:
+        plot_posterior(trace)
+
+    compare_models(models, traces, groups_arr=groups)
